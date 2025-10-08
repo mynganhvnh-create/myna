@@ -53,7 +53,7 @@ def process_financial_data(df):
     
     return df
 
-# --- Hàm gọi API Gemini cho Phân tích Tài chính (Giữ nguyên) ---
+# --- Hàm gọi API Gemini ---
 def get_ai_analysis(data_for_ai, api_key):
     """Gửi dữ liệu phân tích đến Gemini API và nhận nhận xét."""
     try:
@@ -80,51 +80,12 @@ def get_ai_analysis(data_for_ai, api_key):
     except Exception as e:
         return f"Đã xảy ra lỗi không xác định: {e}"
 
-# **********************************************
-# --- KHU VỰC THÊM CHỨC NĂNG CHAT GEMINI ---
-# **********************************************
-
-# Hàm khởi tạo và lấy Chat Session
-def get_chat_session():
-    """Khởi tạo hoặc trả về Chat Session hiện tại."""
-    api_key = st.secrets.get("GEMINI_API_KEY") 
-    if not api_key:
-        st.error("Lỗi: Không tìm thấy Khóa API để khởi tạo Chatbot.")
-        return None
-        
-    # Tạo client và session
-    try:
-        client = genai.Client(api_key=api_key)
-        model_name = 'gemini-2.5-flash'
-        
-        # Thiết lập lịch sử chat trong session state
-        if "chat_session" not in st.session_state:
-            # Thiết lập Persona cho Chatbot
-            system_instruction = "Bạn là một trợ lý phân tích tài chính thân thiện, chuyên nghiệp, chỉ trả lời các câu hỏi liên quan đến tài chính, kế toán hoặc các chủ đề kinh tế chung. Luôn trả lời bằng Tiếng Việt."
-            st.session_state.chat_session = client.chats.create(
-                model=model_name,
-                system_instruction=system_instruction
-            )
-            # Khởi tạo lịch sử hiển thị
-            st.session_state.messages = []
-            
-        return st.session_state.chat_session
-        
-    except Exception as e:
-        st.error(f"Lỗi khởi tạo Gemini Client: {e}")
-        return None
 
 # --- Chức năng 1: Tải File ---
 uploaded_file = st.file_uploader(
     "1. Tải file Excel Báo cáo Tài chính (Chỉ tiêu | Năm trước | Năm sau)",
     type=['xlsx', 'xls']
 )
-
-# Khởi tạo các biến để tránh lỗi UnboundLocalError
-df_processed = None
-data_for_ai = None
-thanh_toan_hien_hanh_N = "N/A"
-thanh_toan_hien_hanh_N_1 = "N/A"
 
 if uploaded_file is not None:
     try:
@@ -158,39 +119,33 @@ if uploaded_file is not None:
                 tsnh_n = df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Năm sau'].iloc[0]
                 tsnh_n_1 = df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Năm trước'].iloc[0]
 
-                # Lấy Nợ ngắn hạn
+                # Lấy Nợ ngắn hạn (Dùng giá trị giả định hoặc lọc từ file nếu có)
+                # **LƯU Ý: Thay thế logic sau nếu bạn có Nợ Ngắn Hạn trong file**
                 no_ngan_han_N = df_processed[df_processed['Chỉ tiêu'].str.contains('NỢ NGẮN HẠN', case=False, na=False)]['Năm sau'].iloc[0]  
                 no_ngan_han_N_1 = df_processed[df_processed['Chỉ tiêu'].str.contains('NỢ NGẮN HẠN', case=False, na=False)]['Năm trước'].iloc[0]
 
                 # Tính toán
-                thanh_toan_hien_hanh_N = tsnh_n / no_ngan_han_N if no_ngan_han_N != 0 else float('inf')
-                thanh_toan_hien_hanh_N_1 = tsnh_n_1 / no_ngan_han_N_1 if no_ngan_han_N_1 != 0 else float('inf')
+                thanh_toan_hien_hanh_N = tsnh_n / no_ngan_han_N
+                thanh_toan_hien_hanh_N_1 = tsnh_n_1 / no_ngan_han_N_1
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    # Chuyển đổi inf sang chuỗi '∞' cho đẹp
-                    value_n_1 = f"{thanh_toan_hien_hanh_N_1:.2f} lần" if thanh_toan_hien_hanh_N_1 != float('inf') else '∞'
                     st.metric(
                         label="Chỉ số Thanh toán Hiện hành (Năm trước)",
-                        value=value_n_1
+                        value=f"{thanh_toan_hien_hanh_N_1:.2f} lần"
                     )
                 with col2:
-                    value_n = f"{thanh_toan_hien_hanh_N:.2f} lần" if thanh_toan_hien_hanh_N != float('inf') else '∞'
-                    # Tính delta nếu cả hai không phải là vô cùng
-                    delta_value = f"{thanh_toan_hien_hanh_N - thanh_toan_hien_hanh_N_1:.2f}" if (thanh_toan_hien_hanh_N != float('inf') and thanh_toan_hien_hanh_N_1 != float('inf')) else None
                     st.metric(
                         label="Chỉ số Thanh toán Hiện hành (Năm sau)",
-                        value=value_n,
-                        delta=delta_value
+                        value=f"{thanh_toan_hien_hanh_N:.2f} lần",
+                        delta=f"{thanh_toan_hien_hanh_N - thanh_toan_hien_hanh_N_1:.2f}"
                     )
                     
             except IndexError:
                  st.warning("Thiếu chỉ tiêu 'TÀI SẢN NGẮN HẠN' hoặc 'NỢ NGẮN HẠN' để tính chỉ số.")
-                 thanh_toan_hien_hanh_N = "N/A" 
+                 thanh_toan_hien_hanh_N = "N/A" # Dùng để tránh lỗi ở Chức năng 5
                  thanh_toan_hien_hanh_N_1 = "N/A"
-            except ZeroDivisionError:
-                 st.warning("Nợ ngắn hạn bằng 0, chỉ số thanh toán hiện hành là vô cùng (∞).")
-                 
+            
             # --- Chức năng 5: Nhận xét AI ---
             st.subheader("5. Nhận xét Tình hình Tài chính (AI)")
             
@@ -204,7 +159,7 @@ if uploaded_file is not None:
                 ],
                 'Giá trị': [
                     df_processed.to_markdown(index=False),
-                    f"{df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Tốc độ tăng trưởng (%)'].iloc[0]:.2f}%" if not df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)].empty else 'N/A', 
+                    f"{df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Tốc độ tăng trưởng (%)'].iloc[0]:.2f}%", 
                     f"{thanh_toan_hien_hanh_N_1}", 
                     f"{thanh_toan_hien_hanh_N}"
                 ]
@@ -228,48 +183,3 @@ if uploaded_file is not None:
 
 else:
     st.info("Vui lòng tải lên file Excel để bắt đầu phân tích.")
-
-# **********************************************
-# --- KHUNG CHAT HỎI ĐÁP VỚI GEMINI (MỚI) ---
-# **********************************************
-
-# Chỉ hiển thị khung chat khi đã tải file và xử lý xong
-if uploaded_file is not None and df_processed is not None:
-    st.markdown("---")
-    st.subheader("6. Hỏi đáp chuyên sâu với Gemini 🤖")
-    
-    # 1. Khởi tạo Chat Session
-    chat = get_chat_session()
-    
-    if chat:
-        # 2. Hiển thị lịch sử tin nhắn
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-        
-        # 3. Xử lý đầu vào từ người dùng
-        if prompt := st.chat_input("Hỏi Gemini về các vấn đề tài chính, ví dụ: 'Chỉ số thanh toán hiện hành bao nhiêu là tốt?'"):
-            # Lưu tin nhắn người dùng vào lịch sử
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            # Gửi câu hỏi đến Gemini và nhận phản hồi
-            with st.chat_message("assistant"):
-                with st.spinner("Gemini đang trả lời..."):
-                    try:
-                        # Gửi nội dung tin nhắn và nhận phản hồi (stream để hiển thị mượt mà hơn)
-                        response = chat.send_message(prompt, stream=True)
-                        response_text = st.write_stream(response)
-                        
-                        # Lưu phản hồi vào lịch sử
-                        st.session_state.messages.append({"role": "assistant", "content": response_text})
-
-                    except APIError as e:
-                        st.error(f"Lỗi API: {e}. Vui lòng kiểm tra lại GEMINI_API_KEY.")
-                    except Exception as e:
-                        st.error(f"Đã xảy ra lỗi không xác định: {e}")
-
-# **********************************************
-# --- KẾT THÚC CHỨC NĂNG CHAT GEMINI ---
-# **********************************************
